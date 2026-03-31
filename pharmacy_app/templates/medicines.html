@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block body %}
+<h2>Add Medicine</h2>
+<form method="post" class="grid-form">
+  <input name="name" placeholder="Medicine Name" required />
+  <input name="generic_composition" placeholder="Generic/Composition" />
+  <input name="brand" placeholder="Brand" />
+  <input name="manufacturer" placeholder="Manufacturer" />
+  <input name="batch_no" placeholder="Batch No." required />
+  <label>MFG Date <input type="date" name="mfg_date" required /></label>
+  <label>EXP Date <input type="date" name="exp_date" required /></label>
+  <input type="number" name="quantity" placeholder="Quantity" min="0" required />
+  <input type="number" step="0.01" name="rate" placeholder="Rate" min="0" required />
+  <input name="code_value" placeholder="QR/Code Value" />
+  <input name="label_notes" placeholder="Label/Notes" />
+  <button type="submit">Save Medicine</button>
+</form>
+
+<h2>Search / Scanner</h2>
+<form method="get">
+  <input name="q" value="{{ query }}" placeholder="Name / Batch / Code" />
+  <button type="submit">Search</button>
+</form>
+{% if query %}
+  <p>{{ 'Medicine Available' if rows else 'No medicine available' }}</p>
+{% endif %}
+<table>
+  <tr><th>ID</th><th>Name</th><th>Batch</th><th>Qty</th><th>Rate</th><th>Code</th></tr>
+  {% for row in rows %}
+  <tr><td>{{ row.id }}</td><td>{{ row.name }}</td><td>{{ row.batch_no }}</td><td>{{ row.quantity }}</td><td>{{ row.rate }}</td><td>{{ row.code_value }}</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

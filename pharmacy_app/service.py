@@ -14,6 +14,7 @@ def _finalize_connection(conn):
         conn.close()
 
 
+def add_medicine(payload: dict, tenant_id: int = 1) -> int:
 def add_medicine(payload: dict) -> int:
     if payload["exp_date"] <= payload["mfg_date"]:
         raise ValidationError("EXP date must be greater than MFG date")
@@ -22,6 +23,12 @@ def add_medicine(payload: dict) -> int:
         cur = conn.execute(
             """
             INSERT INTO medicines (
+                tenant_id, name, generic_composition, brand, manufacturer, batch_no, mfg_date,
+                exp_date, quantity, rate, label_notes, code_value
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                tenant_id,
                 name, generic_composition, brand, manufacturer, batch_no, mfg_date,
                 exp_date, quantity, rate, label_notes, code_value
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -46,6 +53,17 @@ def add_medicine(payload: dict) -> int:
         _finalize_connection(conn)
 
 
+def search_medicines(query: str, tenant_id: int = 1):
+    conn = get_connection()
+    try:
+        return conn.execute(
+            """
+            SELECT *
+            FROM medicines
+            WHERE tenant_id = ? AND (name LIKE ? OR batch_no LIKE ? OR code_value = ?)
+            ORDER BY name
+            """,
+            (tenant_id, f"%{query}%", f"%{query}%", query),
 def search_medicines(query: str):
     conn = get_connection()
     try:
@@ -57,6 +75,12 @@ def search_medicines(query: str):
         _finalize_connection(conn)
 
 
+def get_short_list(tenant_id: int = 1):
+    conn = get_connection()
+    try:
+        return conn.execute(
+            "SELECT * FROM short_list WHERE tenant_id = ? ORDER BY quantity ASC, name ASC", (tenant_id,)
+        ).fetchall()
 def get_short_list():
     conn = get_connection()
     try:
@@ -65,6 +89,7 @@ def get_short_list():
         _finalize_connection(conn)
 
 
+def create_sale(*, medicine_id: int, strips_sold: int, tablets_sold: int, payment_mode: str, customer_name: str = "", user_id: int | None = None, tenant_id: int = 1):
 def create_sale(*, medicine_id: int, strips_sold: int, tablets_sold: int, payment_mode: str, customer_name: str = "", user_id: int | None = None):
     total_units = strips_sold + tablets_sold
     if total_units <= 0:
@@ -74,6 +99,7 @@ def create_sale(*, medicine_id: int, strips_sold: int, tablets_sold: int, paymen
 
     conn = get_connection()
     try:
+        med = conn.execute("SELECT * FROM medicines WHERE id = ? AND tenant_id = ?", (medicine_id, tenant_id)).fetchone()
         med = conn.execute("SELECT * FROM medicines WHERE id = ?", (medicine_id,)).fetchone()
         if not med:
             raise ValidationError("Medicine not found")
@@ -83,6 +109,8 @@ def create_sale(*, medicine_id: int, strips_sold: int, tablets_sold: int, paymen
         line_total = total_units * med["rate"]
         sale_date = date.today().isoformat()
         cur = conn.execute(
+            "INSERT INTO sales (tenant_id, sale_date, customer_name, payment_mode, total_amount, created_by) VALUES (?, ?, ?, ?, ?, ?)",
+            (tenant_id, sale_date, customer_name, payment_mode, line_total, user_id),
             "INSERT INTO sales (sale_date, customer_name, payment_mode, total_amount, created_by) VALUES (?, ?, ?, ?, ?)",
             (sale_date, customer_name, payment_mode, line_total, user_id),
         )
@@ -94,6 +122,10 @@ def create_sale(*, medicine_id: int, strips_sold: int, tablets_sold: int, paymen
             """,
             (sale_id, medicine_id, strips_sold, tablets_sold, med["rate"], line_total),
         )
+        conn.execute(
+            "UPDATE medicines SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND tenant_id = ?",
+            (total_units, medicine_id, tenant_id),
+        )
         conn.execute("UPDATE medicines SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (total_units, medicine_id))
         conn.commit()
         return sale_id
@@ -101,6 +133,7 @@ def create_sale(*, medicine_id: int, strips_sold: int, tablets_sold: int, paymen
         _finalize_connection(conn)
 
 
+def daily_summary(day: str | None = None, tenant_id: int = 1):
 def daily_summary(day: str | None = None):
     if not day:
         day = date.today().isoformat()
@@ -115,6 +148,9 @@ def daily_summary(day: str | None = None):
                 COALESCE(SUM(CASE WHEN s.payment_mode = 'online' THEN s.total_amount ELSE 0 END), 0) AS online_total
             FROM sales s
             LEFT JOIN sale_items si ON si.sale_id = s.id
+            WHERE s.sale_date = ? AND s.tenant_id = ?
+            """,
+            (day, tenant_id),
             WHERE s.sale_date = ?
             """,
             (day,),
@@ -125,6 +161,10 @@ def daily_summary(day: str | None = None):
             FROM sales s
             JOIN sale_items si ON si.sale_id = s.id
             JOIN medicines m ON m.id = si.medicine_id
+            WHERE s.sale_date = ? AND s.tenant_id = ?
+            ORDER BY s.id DESC
+            """,
+            (day, tenant_id),
             WHERE s.sale_date = ?
             ORDER BY s.id DESC
             """,

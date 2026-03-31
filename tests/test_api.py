@@ -1,6 +1,10 @@
 import unittest
 from pathlib import Path
 
+from werkzeug.security import generate_password_hash
+
+from pharmacy_app import create_app
+from pharmacy_app.db import get_connection
 from pharmacy_app import create_app
 
 
@@ -12,6 +16,10 @@ class ApiTests(unittest.TestCase):
         self.app = create_app({"TESTING": True, "DB_PATH": db_path, "DEFAULT_OWNER_PASSWORD": "owner123"})
         self.client = self.app.test_client()
 
+    def _login_token(self, username="owner", password="owner123", tenant_slug="default"):
+        response = self.client.post(
+            "/api/login", json={"username": username, "password": password, "tenant_slug": tenant_slug}
+        )
     def _login_token(self):
         response = self.client.post("/api/login", json={"username": "owner", "password": "owner123"})
         self.assertEqual(response.status_code, 200)
@@ -51,6 +59,37 @@ class ApiTests(unittest.TestCase):
         body = summary.get_json()
         self.assertEqual(summary.status_code, 200)
         self.assertEqual(body["totals"]["online_total"], 7.0)
+
+    def test_tenant_isolation(self):
+        with self.app.app_context():
+            conn = get_connection()
+            tenant_id = conn.execute("INSERT INTO tenants (slug, name) VALUES (?, ?)", ("branch-2", "Branch 2")).lastrowid
+            conn.execute(
+                "INSERT INTO users (tenant_id, username, password_hash, role) VALUES (?, ?, ?, ?)",
+                (tenant_id, "branch_owner", generate_password_hash("branch123"), "owner"),
+            )
+            conn.commit()
+
+        owner_token = self._login_token()
+        owner_headers = {"Authorization": f"Bearer {owner_token}"}
+        self.client.post(
+            "/api/medicines",
+            headers=owner_headers,
+            json={
+                "name": "TenantOneMed",
+                "batch_no": "T1",
+                "mfg_date": "2026-01-01",
+                "exp_date": "2027-01-01",
+                "quantity": 5,
+                "rate": 2,
+            },
+        )
+
+        branch_token = self._login_token(username="branch_owner", password="branch123", tenant_slug="branch-2")
+        branch_headers = {"Authorization": f"Bearer {branch_token}"}
+        result = self.client.get("/api/medicines?q=TenantOneMed", headers=branch_headers)
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.get_json()["count"], 0)
 
 
 if __name__ == "__main__":

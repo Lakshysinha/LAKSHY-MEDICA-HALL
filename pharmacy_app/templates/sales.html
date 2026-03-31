@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block body %}
+<h2>Sales Entry</h2>
+<form method="get">
+  <input name="q" value="{{ query }}" placeholder="Search medicine name/batch/code" required />
+  <button type="submit">Find Medicine</button>
+</form>
+
+{% if rows %}
+<form method="post" class="grid-form">
+  <label>Medicine
+    <select name="medicine_id" required>
+      {% for m in rows %}
+      <option value="{{ m.id }}">{{ m.name }} ({{ m.batch_no }}) qty:{{ m.quantity }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <input type="number" name="strips_sold" min="0" value="0" placeholder="Strips sold" />
+  <input type="number" name="tablets_sold" min="0" value="0" placeholder="Tablets sold" />
+  <select name="payment_mode" required>
+    <option value="cash">Cash</option>
+    <option value="online">Online</option>
+  </select>
+  <input name="customer_name" placeholder="Customer name (optional)" />
+  <button type="submit">Save Sale</button>
+</form>
+{% endif %}
+{% endblock %}

@@ -5,6 +5,7 @@ from werkzeug.security import generate_password_hash
 
 from pharmacy_app import create_app
 from pharmacy_app.db import get_connection
+from pharmacy_app import create_app
 
 
 class ApiTests(unittest.TestCase):
@@ -19,6 +20,8 @@ class ApiTests(unittest.TestCase):
         response = self.client.post(
             "/api/login", json={"username": username, "password": password, "tenant_slug": tenant_slug}
         )
+    def _login_token(self):
+        response = self.client.post("/api/login", json={"username": "owner", "password": "owner123"})
         self.assertEqual(response.status_code, 200)
         return response.get_json()["access_token"]
 

@@ -36,6 +36,15 @@ def ensure_default_owner() -> None:
         conn.execute(
             "INSERT INTO users (tenant_id, username, password_hash, role) VALUES (?, ?, ?, ?)",
             (tenant_id, username, generate_password_hash(password), "owner"),
+def ensure_default_owner() -> None:
+    username = current_app.config["DEFAULT_OWNER_USERNAME"]
+    password = current_app.config["DEFAULT_OWNER_PASSWORD"]
+    conn = get_connection()
+    existing = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+    if not existing:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
+            (username, generate_password_hash(password), "owner"),
         )
         conn.commit()
 
@@ -52,6 +61,9 @@ def authenticate(username: str, password: str, tenant_slug: str | None = None):
         """,
         (username, tenant_slug),
     ).fetchone()
+def authenticate(username: str, password: str):
+    conn = get_connection()
+    user = conn.execute("SELECT * FROM users WHERE username = ? AND is_active = 1", (username,)).fetchone()
     if user and check_password_hash(user["password_hash"], password):
         return user
     return None
@@ -83,6 +95,7 @@ def role_required(allowed_roles: set[str]):
 
 
 def issue_api_token(user_id: int, tenant_id: int) -> tuple[str, str]:
+def issue_api_token(user_id: int) -> tuple[str, str]:
     token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(token.encode()).hexdigest()
     expires_at = (_utc_now() + timedelta(seconds=current_app.config["API_TOKEN_TTL_SECONDS"])).isoformat()
@@ -90,6 +103,8 @@ def issue_api_token(user_id: int, tenant_id: int) -> tuple[str, str]:
     conn.execute(
         "INSERT INTO api_tokens (tenant_id, user_id, token_hash, expires_at) VALUES (?, ?, ?, ?)",
         (tenant_id, user_id, token_hash, expires_at),
+        "INSERT INTO api_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)",
+        (user_id, token_hash, expires_at),
     )
     conn.commit()
     return token, expires_at
@@ -120,6 +135,9 @@ def api_auth_required(func: Callable):
             FROM api_tokens at
             JOIN users u ON u.id = at.user_id
             JOIN tenants t ON t.id = u.tenant_id
+            SELECT at.*, u.username, u.role, u.is_active
+            FROM api_tokens at
+            JOIN users u ON u.id = at.user_id
             WHERE at.token_hash = ?
             """,
             (token_hash,),
@@ -132,6 +150,8 @@ def api_auth_required(func: Callable):
             return {"error": "Token expired"}, 401
         if token_row["is_active"] != 1 or token_row["tenant_active"] != 1:
             return {"error": "User or tenant inactive"}, 403
+        if token_row["is_active"] != 1:
+            return {"error": "User inactive"}, 403
         g.api_user = token_row
         g.api_token = token
         return func(*args, **kwargs)

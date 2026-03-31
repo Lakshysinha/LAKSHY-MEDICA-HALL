@@ -11,6 +11,7 @@ def register_routes(app):
     @login_required
     def dashboard():
         totals, sales = daily_summary(request.args.get("day"), tenant_id=session.get("tenant_id", 1))
+        totals, sales = daily_summary(request.args.get("day"))
         return render_template("dashboard.html", totals=totals, sales=sales)
 
     @app.route("/login", methods=["GET", "POST"])
@@ -18,6 +19,7 @@ def register_routes(app):
         if request.method == "POST":
             tenant_slug = request.form.get("tenant_slug") or app.config["DEFAULT_TENANT_SLUG"]
             user = authenticate(request.form["username"], request.form["password"], tenant_slug=tenant_slug)
+            user = authenticate(request.form["username"], request.form["password"])
             if user:
                 session["user_id"] = user["id"]
                 session["username"] = user["username"]
@@ -41,6 +43,9 @@ def register_routes(app):
         if request.method == "POST":
             try:
                 add_medicine(request.form.to_dict(), tenant_id=tenant_id)
+        if request.method == "POST":
+            try:
+                add_medicine(request.form.to_dict())
                 flash("Medicine added.", "success")
             except (ValidationError, ValueError) as exc:
                 flash(str(exc), "danger")
@@ -48,12 +53,14 @@ def register_routes(app):
                 flash(f"Unable to save medicine: {exc}", "danger")
         query = request.args.get("q", "")
         rows = search_medicines(query, tenant_id=tenant_id) if query else []
+        rows = search_medicines(query) if query else []
         return render_template("medicines.html", rows=rows, query=query)
 
     @app.route("/short-list")
     @login_required
     def short_list():
         rows = get_short_list(tenant_id=session.get("tenant_id", 1))
+        rows = get_short_list()
         return render_template("short_list.html", rows=rows)
 
     @app.route("/sales", methods=["GET", "POST"])
@@ -76,4 +83,5 @@ def register_routes(app):
                 flash(str(exc), "danger")
         query = request.args.get("q", "")
         rows = search_medicines(query, tenant_id=tenant_id) if query else []
+        rows = search_medicines(query) if query else []
         return render_template("sales.html", rows=rows, query=query)

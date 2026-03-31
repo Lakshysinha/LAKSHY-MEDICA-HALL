@@ -13,6 +13,36 @@ Production-oriented pharmacy management platform with Web UI + API, now hardened
 
 ## Configuration
 Copy `.env.example` to `.env` and set values:
+Production-oriented pharmacy management platform with both Web UI and API interfaces.
+
+## What is implemented now
+
+- **Medicine master**: full metadata, batch, MFG/EXP, stock, pricing, code/scanner value.
+- **Inventory controls**: validation for stock and dates, auto low-stock Short List (`<=3`).
+- **Sales entry**: strips/tablets, customer name (optional), payment mode (`cash`/`online`).
+- **Daily reporting**: medicines sold, total sales, cash total, online total.
+- **Authentication**:
+  - Session auth for web UI.
+  - Token auth for API (`/api/login`, `/api/logout`) with DB-stored token revocation and expiry.
+- **Operational controls**:
+  - Config via environment variables.
+  - Health endpoints (`/health`, `/api/health`).
+  - Backup/restore script for SQLite data.
+  - Dockerized runtime and Gunicorn app server.
+
+## Repository layout
+
+- `pharmacy_app/` - app package (web routes + API + service layer + DB + auth)
+- `docs/` - phase-wise delivery and deployment guides
+- `scripts/` - operational scripts (backup / restore)
+- `tests/` - tests
+- `run.py` - local development entrypoint
+- `wsgi.py` - production WSGI entrypoint
+
+## Configuration
+
+Copy `.env.example` to `.env` and update:
+
 - `SECRET_KEY`
 - `DB_PATH`
 - `SESSION_COOKIE_SECURE`
@@ -25,6 +55,9 @@ Copy `.env.example` to `.env` and set values:
 - `LOG_LEVEL`
 
 ## Local run
+
+## Local run
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate
@@ -40,6 +73,19 @@ curl -X POST http://localhost:5000/api/login \
 ```
 
 Use token:
+Default owner credentials come from env vars:
+- `DEFAULT_OWNER_USERNAME`
+- `DEFAULT_OWNER_PASSWORD`
+
+## API quick start
+
+1. Login and get token:
+```bash
+curl -X POST http://localhost:5000/api/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"owner","password":"owner123"}'
+```
+2. Use token:
 ```bash
 curl http://localhost:5000/api/summary/daily \
   -H 'Authorization: Bearer <TOKEN>'
@@ -58,6 +104,14 @@ docker compose up --build -d
 - Prometheus UI: `http://localhost:9090`
 
 ## Test command
+## Production deployment (Docker)
+
+```bash
+docker compose up --build -d
+```
+
+## Test command
+
 ```bash
 python -m unittest discover -s tests -p 'test_*.py'
 ```

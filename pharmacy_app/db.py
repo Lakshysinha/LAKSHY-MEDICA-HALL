@@ -75,6 +75,18 @@ def _migration_001_baseline(conn: sqlite3.Connection) -> None:
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(tenant_id) REFERENCES tenants(id),
             UNIQUE(tenant_id, username)
+def init_db() -> None:
+    conn = sqlite3.connect(resolve_db_path())
+    conn.execute("PRAGMA foreign_keys = ON;")
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL CHECK(role IN ('owner', 'pharmacist', 'staff')),
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE TABLE IF NOT EXISTS medicines (
@@ -96,6 +108,10 @@ def _migration_001_baseline(conn: sqlite3.Connection) -> None:
             FOREIGN KEY(tenant_id) REFERENCES tenants(id),
             UNIQUE(tenant_id, name, batch_no),
             UNIQUE(tenant_id, code_value)
+            code_value TEXT UNIQUE,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(name, batch_no)
         );
 
         CREATE TABLE IF NOT EXISTS sales (
@@ -151,6 +167,12 @@ def _migration_001_baseline(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_sales_tenant_date ON sales(tenant_id, sale_date);
         CREATE INDEX IF NOT EXISTS idx_medicines_tenant_name ON medicines(tenant_id, name);
         CREATE INDEX IF NOT EXISTS idx_medicines_tenant_batch_no ON medicines(tenant_id, batch_no);
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_sales_sale_date ON sales(sale_date);
+        CREATE INDEX IF NOT EXISTS idx_medicines_name ON medicines(name);
+        CREATE INDEX IF NOT EXISTS idx_medicines_batch_no ON medicines(batch_no);
 
         CREATE VIEW IF NOT EXISTS short_list AS
         SELECT *

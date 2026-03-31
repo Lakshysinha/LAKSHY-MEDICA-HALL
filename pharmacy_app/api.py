@@ -15,6 +15,10 @@ def api_login():
     if not user:
         return {"error": "Invalid credentials"}, 401
     token, expires_at = issue_api_token(user["id"], user["tenant_id"])
+    user = authenticate(body.get("username", ""), body.get("password", ""))
+    if not user:
+        return {"error": "Invalid credentials"}, 401
+    token, expires_at = issue_api_token(user["id"])
     return {
         "access_token": token,
         "token_type": "Bearer",
@@ -26,6 +30,7 @@ def api_login():
             "tenant_id": user["tenant_id"],
             "tenant_slug": user["tenant_slug"],
         },
+        "user": {"id": user["id"], "username": user["username"], "role": user["role"]},
     }
 
 
@@ -46,6 +51,7 @@ def api_health():
 def api_medicines_search():
     query = request.args.get("q", "")
     rows = search_medicines(query, tenant_id=g.api_user["tenant_id"]) if query else []
+    rows = search_medicines(query) if query else []
     return {
         "count": len(rows),
         "items": [dict(r) for r in rows],
@@ -58,6 +64,7 @@ def api_add_medicine():
     body = request.get_json(silent=True) or {}
     try:
         med_id = add_medicine(body, tenant_id=g.api_user["tenant_id"])
+        med_id = add_medicine(body)
         return {"id": med_id}, 201
     except (ValidationError, KeyError, ValueError) as exc:
         return {"error": str(exc)}, 400
@@ -87,6 +94,7 @@ def api_create_sale():
 def api_daily_summary():
     day = request.args.get("day")
     totals, sales = daily_summary(day, tenant_id=g.api_user["tenant_id"])
+    totals, sales = daily_summary(day)
     return {
         "totals": dict(totals),
         "sales": [dict(s) for s in sales],

@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block body %}
+<h2>Short List (Quantity ≤ 3)</h2>
+<table>
+  <tr><th>Name</th><th>Batch</th><th>Quantity</th><th>EXP Date</th></tr>
+  {% for row in rows %}
+  <tr><td>{{ row.name }}</td><td>{{ row.batch_no }}</td><td>{{ row.quantity }}</td><td>{{ row.exp_date }}</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

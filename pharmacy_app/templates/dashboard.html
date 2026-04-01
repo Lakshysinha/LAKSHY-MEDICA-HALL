@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block body %}
+<section class="grid">
+  <div class="card"><h3>Total Medicines Sold</h3><p>{{ totals.medicines_sold }}</p></div>
+  <div class="card"><h3>Total Sales</h3><p>₹ {{ '%.2f'|format(totals.total_sales) }}</p></div>
+  <div class="card"><h3>Cash</h3><p>₹ {{ '%.2f'|format(totals.cash_total) }}</p></div>
+  <div class="card"><h3>Online</h3><p>₹ {{ '%.2f'|format(totals.online_total) }}</p></div>
+</section>
+
+<h2>Today's Sales Records</h2>
+<table>
+  <tr><th>ID</th><th>Customer</th><th>Medicine</th><th>Strips</th><th>Tablets</th><th>Rate</th><th>Total</th><th>Payment</th></tr>
+  {% for sale in sales %}
+  <tr>
+    <td>{{ sale.id }}</td>
+    <td>{{ sale.customer_name or '-' }}</td>
+    <td>{{ sale.medicine_name }}</td>
+    <td>{{ sale.strips_sold }}</td>
+    <td>{{ sale.tablets_sold }}</td>
+    <td>{{ sale.unit_rate }}</td>
+    <td>{{ sale.line_total }}</td>
+    <td>{{ sale.payment_mode }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

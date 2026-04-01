@@ -32,6 +32,15 @@ def close_db(_=None) -> None:
         db.close()
 
 
+def init_db() -> None:
+    conn = sqlite3.connect(resolve_db_path())
+    conn.execute("PRAGMA foreign_keys = ON;")
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS tenants (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            code TEXT UNIQUE NOT NULL,
 def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
     row = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()
     return row is not None
@@ -164,6 +173,37 @@ def init_db() -> None:
             FOREIGN KEY(user_id) REFERENCES users(id)
         );
 
+        CREATE TABLE IF NOT EXISTS request_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tenant_id INTEGER,
+            method TEXT NOT NULL,
+            path TEXT NOT NULL,
+            status_code INTEGER NOT NULL,
+            duration_ms REAL NOT NULL,
+            request_id TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(tenant_id) REFERENCES tenants(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_sales_sale_date ON sales(sale_date);
+        CREATE INDEX IF NOT EXISTS idx_sales_tenant_sale_date ON sales(tenant_id, sale_date);
+        CREATE INDEX IF NOT EXISTS idx_medicines_tenant_name ON medicines(tenant_id, name);
+        CREATE INDEX IF NOT EXISTS idx_medicines_tenant_batch_no ON medicines(tenant_id, batch_no);
+        CREATE INDEX IF NOT EXISTS idx_api_tokens_tenant_user ON api_tokens(tenant_id, user_id);
+        """
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO tenants (id, name, code, is_active) VALUES (1, 'Default Tenant', 'default', 1)"
+    )
+    conn.execute("DROP VIEW IF EXISTS short_list")
+    conn.execute(
+        """
+        CREATE VIEW IF NOT EXISTS short_list AS
+        SELECT *
+        FROM medicines
+        WHERE quantity <= 3
+        """
+    )
         CREATE INDEX IF NOT EXISTS idx_sales_tenant_date ON sales(tenant_id, sale_date);
         CREATE INDEX IF NOT EXISTS idx_medicines_tenant_name ON medicines(tenant_id, name);
         CREATE INDEX IF NOT EXISTS idx_medicines_tenant_batch_no ON medicines(tenant_id, batch_no);

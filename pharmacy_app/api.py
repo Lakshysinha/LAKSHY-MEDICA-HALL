@@ -2,6 +2,7 @@ from datetime import date
 
 from flask import Blueprint, g, request
 
+from .auth import api_auth_required, authenticate, issue_api_token
 from .auth import api_auth_required, authenticate, issue_api_token, revoke_api_token
 from .service import ValidationError, add_medicine, create_sale, daily_summary, search_medicines
 
@@ -11,6 +12,10 @@ api_bp = Blueprint("api", __name__, url_prefix="/api")
 @api_bp.post("/login")
 def api_login():
     body = request.get_json(silent=True) or {}
+    user = authenticate(body.get("username", ""), body.get("password", ""))
+    if not user:
+        return {"error": "Invalid credentials"}, 401
+    token, expires_at = issue_api_token(user["id"], g.tenant["id"])
     user = authenticate(body.get("username", ""), body.get("password", ""), tenant_slug=body.get("tenant_slug"))
     if not user:
         return {"error": "Invalid credentials"}, 401
@@ -23,6 +28,7 @@ def api_login():
         "access_token": token,
         "token_type": "Bearer",
         "expires_at": expires_at,
+        "tenant": {"id": g.tenant["id"], "code": g.tenant["code"]},
         "user": {
             "id": user["id"],
             "username": user["username"],
@@ -37,6 +43,8 @@ def api_login():
 @api_bp.post("/logout")
 @api_auth_required
 def api_logout():
+    from .auth import revoke_api_token
+
     revoke_api_token(g.api_token)
     return {"status": "logged_out"}
 

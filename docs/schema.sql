@@ -1,5 +1,7 @@
 CREATE TABLE tenants (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    code TEXT UNIQUE NOT NULL,
     slug TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
     is_active INTEGER NOT NULL DEFAULT 1,
@@ -14,6 +16,7 @@ CREATE TABLE users (
     role TEXT NOT NULL CHECK(role IN ('owner', 'pharmacist', 'staff')),
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id),
     FOREIGN KEY(tenant_id) REFERENCES tenants(id),
     UNIQUE(tenant_id, username)
 );
@@ -34,6 +37,7 @@ CREATE TABLE medicines (
     code_value TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id),
     FOREIGN KEY(tenant_id) REFERENCES tenants(id),
     UNIQUE(tenant_id, name, batch_no),
     UNIQUE(tenant_id, code_value)
@@ -48,6 +52,8 @@ CREATE TABLE sales (
     total_amount REAL NOT NULL CHECK(total_amount >= 0),
     created_by INTEGER,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+    FOREIGN KEY (created_by) REFERENCES users(id)
     FOREIGN KEY(tenant_id) REFERENCES tenants(id),
     FOREIGN KEY(created_by) REFERENCES users(id)
 );
@@ -60,6 +66,45 @@ CREATE TABLE sale_items (
     tablets_sold INTEGER NOT NULL DEFAULT 0 CHECK(tablets_sold >= 0),
     unit_rate REAL NOT NULL CHECK(unit_rate >= 0),
     line_total REAL NOT NULL CHECK(line_total >= 0),
+    FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE,
+    FOREIGN KEY (medicine_id) REFERENCES medicines(id)
+);
+
+CREATE TABLE api_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    revoked_at TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id INTEGER NOT NULL,
+    actor_user_id INTEGER,
+    action TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id INTEGER,
+    payload_json TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+    FOREIGN KEY (actor_user_id) REFERENCES users(id)
+);
+
+CREATE TABLE request_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id INTEGER,
+    method TEXT NOT NULL,
+    path TEXT NOT NULL,
+    status_code INTEGER NOT NULL,
+    duration_ms REAL NOT NULL,
+    request_id TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id)
     FOREIGN KEY(sale_id) REFERENCES sales(id) ON DELETE CASCADE,
     FOREIGN KEY(medicine_id) REFERENCES medicines(id)
 CREATE TABLE users (

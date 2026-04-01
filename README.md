@@ -24,6 +24,18 @@ Production-oriented pharmacy management platform with both Web UI and API interf
 - **Authentication**:
   - Session auth for web UI.
   - Token auth for API (`/api/login`, `/api/logout`) with DB-stored token revocation and expiry.
+- **Advanced hardening**:
+  - Tenant isolation via `tenants` and `tenant_id` scoped data access.
+  - Reverse proxy + TLS via Nginx.
+  - Centralized request log capture and `/metrics` endpoint.
+  - Automated migration runner.
+
+## Repository layout
+
+- `pharmacy_app/` - app package (web routes + API + service layer + DB + auth + observability)
+- `deploy/nginx/` - production reverse proxy configuration
+- `docs/` - phase-wise delivery and deployment guides
+- `scripts/` - operational scripts (backup / restore / migrate)
 - **Operational controls**:
   - Config via environment variables.
   - Health endpoints (`/health`, `/api/health`).
@@ -50,6 +62,7 @@ Copy `.env.example` to `.env` and update:
 - `API_TOKEN_TTL_SECONDS`
 - `DEFAULT_OWNER_USERNAME`
 - `DEFAULT_OWNER_PASSWORD`
+- `DEFAULT_TENANT_CODE`
 - `DEFAULT_TENANT_SLUG`
 - `DEFAULT_TENANT_NAME`
 - `LOG_LEVEL`
@@ -83,6 +96,7 @@ Default owner credentials come from env vars:
 ```bash
 curl -X POST http://localhost:5000/api/login \
   -H 'Content-Type: application/json' \
+  -H 'X-Tenant-Code: default' \
   -d '{"username":"owner","password":"owner123"}'
 ```
 2. Use token:
@@ -91,6 +105,19 @@ curl http://localhost:5000/api/summary/daily \
   -H 'Authorization: Bearer <TOKEN>'
 ```
 
+## Production deployment (Docker + Nginx TLS)
+
+```bash
+cp .env.example .env
+mkdir -p deploy/certs
+# place fullchain.pem and privkey.pem into deploy/certs/
+docker compose up --build -d
+```
+
+## Run migrations
+
+```bash
+python scripts/migrate.py
 ## Production deployment
 1. Put TLS cert files at:
    - `deploy/certs/tls.crt`

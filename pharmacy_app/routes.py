@@ -1,5 +1,10 @@
 import sqlite3
 
+from flask import flash, g, redirect, render_template, request, session, url_for
+
+from .auth import authenticate, login_required, role_required
+from .service import ValidationError, add_medicine, create_sale, daily_summary, get_short_list, search_medicines
+from .tenant import resolve_tenant_code, set_request_tenant
 from flask import flash, redirect, render_template, request, session, url_for
 
 from .auth import authenticate, login_required, role_required
@@ -24,6 +29,10 @@ def register_routes(app):
                 session["user_id"] = user["id"]
                 session["username"] = user["username"]
                 session["role"] = user["role"]
+                if g.get("tenant"):
+                    set_request_tenant(g.tenant)
+                return redirect(url_for("dashboard"))
+            flash(f"Invalid credentials for tenant '{resolve_tenant_code()}'", "danger")
                 session["tenant_id"] = user["tenant_id"]
                 session["tenant_slug"] = user["tenant_slug"]
                 return redirect(url_for("dashboard"))

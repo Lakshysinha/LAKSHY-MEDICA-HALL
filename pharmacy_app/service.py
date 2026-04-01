@@ -3,6 +3,7 @@ from datetime import date
 from flask import has_app_context
 
 from .db import get_connection
+from .tenant import get_tenant_id
 
 
 class ValidationError(Exception):
@@ -14,6 +15,10 @@ def _finalize_connection(conn):
         conn.close()
 
 
+def add_medicine(payload: dict, tenant_id: int | None = None) -> int:
+    if payload["exp_date"] <= payload["mfg_date"]:
+        raise ValidationError("EXP date must be greater than MFG date")
+    tenant_id = tenant_id or get_tenant_id()
 def add_medicine(payload: dict, tenant_id: int = 1) -> int:
 def add_medicine(payload: dict) -> int:
     if payload["exp_date"] <= payload["mfg_date"]:
@@ -53,11 +58,19 @@ def add_medicine(payload: dict) -> int:
         _finalize_connection(conn)
 
 
+def search_medicines(query: str, tenant_id: int | None = None):
+    tenant_id = tenant_id or get_tenant_id()
 def search_medicines(query: str, tenant_id: int = 1):
     conn = get_connection()
     try:
         return conn.execute(
             """
+            SELECT * FROM medicines
+            WHERE tenant_id = ?
+            AND (name LIKE ? OR batch_no LIKE ? OR code_value = ?)
+            ORDER BY name
+            """,
+            (tenant_id, f"%{query}%", f"%{query}%", query),
             SELECT *
             FROM medicines
             WHERE tenant_id = ? AND (name LIKE ? OR batch_no LIKE ? OR code_value = ?)
@@ -75,6 +88,8 @@ def search_medicines(query: str):
         _finalize_connection(conn)
 
 
+def get_short_list(tenant_id: int | None = None):
+    tenant_id = tenant_id or get_tenant_id()
 def get_short_list(tenant_id: int = 1):
     conn = get_connection()
     try:
@@ -89,6 +104,7 @@ def get_short_list():
         _finalize_connection(conn)
 
 
+def create_sale(*, medicine_id: int, strips_sold: int, tablets_sold: int, payment_mode: str, customer_name: str = "", user_id: int | None = None, tenant_id: int | None = None):
 def create_sale(*, medicine_id: int, strips_sold: int, tablets_sold: int, payment_mode: str, customer_name: str = "", user_id: int | None = None, tenant_id: int = 1):
 def create_sale(*, medicine_id: int, strips_sold: int, tablets_sold: int, payment_mode: str, customer_name: str = "", user_id: int | None = None):
     total_units = strips_sold + tablets_sold
@@ -97,6 +113,12 @@ def create_sale(*, medicine_id: int, strips_sold: int, tablets_sold: int, paymen
     if payment_mode not in {"cash", "online"}:
         raise ValidationError("Payment mode required")
 
+    tenant_id = tenant_id or get_tenant_id()
+    conn = get_connection()
+    try:
+        med = conn.execute(
+            "SELECT * FROM medicines WHERE id = ? AND tenant_id = ?", (medicine_id, tenant_id)
+        ).fetchone()
     conn = get_connection()
     try:
         med = conn.execute("SELECT * FROM medicines WHERE id = ? AND tenant_id = ?", (medicine_id, tenant_id)).fetchone()
@@ -133,6 +155,10 @@ def create_sale(*, medicine_id: int, strips_sold: int, tablets_sold: int, paymen
         _finalize_connection(conn)
 
 
+def daily_summary(day: str | None = None, tenant_id: int | None = None):
+    if not day:
+        day = date.today().isoformat()
+    tenant_id = tenant_id or get_tenant_id()
 def daily_summary(day: str | None = None, tenant_id: int = 1):
 def daily_summary(day: str | None = None):
     if not day:

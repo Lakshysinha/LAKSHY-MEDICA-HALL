@@ -8,12 +8,16 @@ from flask import current_app, flash, g, redirect, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .db import get_connection
+from .tenant import resolve_tenant_code, set_request_tenant
 
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _get_tenant_by_code(code: str):
+    conn = get_connection()
+    return conn.execute("SELECT * FROM tenants WHERE code = ? AND is_active = 1", (code,)).fetchone()
 def _get_or_create_default_tenant_id() -> int:
     slug = current_app.config["DEFAULT_TENANT_SLUG"]
     name = current_app.config["DEFAULT_TENANT_NAME"]
@@ -29,6 +33,37 @@ def _get_or_create_default_tenant_id() -> int:
 def ensure_default_owner() -> None:
     username = current_app.config["DEFAULT_OWNER_USERNAME"]
     password = current_app.config["DEFAULT_OWNER_PASSWORD"]
+    tenant_code = current_app.config["DEFAULT_TENANT_CODE"]
+    tenant_name = current_app.config["DEFAULT_TENANT_NAME"]
+    conn = get_connection()
+    conn.execute(
+        "INSERT OR IGNORE INTO tenants (name, code, is_active) VALUES (?, ?, 1)",
+        (tenant_name, tenant_code),
+    )
+    tenant = conn.execute("SELECT id FROM tenants WHERE code = ?", (tenant_code,)).fetchone()
+    existing = conn.execute(
+        "SELECT id FROM users WHERE username = ? AND tenant_id = ?", (username, tenant["id"])
+    ).fetchone()
+    if not existing:
+        conn.execute(
+            "INSERT INTO users (tenant_id, username, password_hash, role) VALUES (?, ?, ?, ?)",
+            (tenant["id"], username, generate_password_hash(password), "owner"),
+        )
+    conn.commit()
+
+
+def authenticate(username: str, password: str):
+    tenant_code = resolve_tenant_code()
+    tenant = _get_tenant_by_code(tenant_code)
+    if not tenant:
+        return None
+    conn = get_connection()
+    user = conn.execute(
+        "SELECT * FROM users WHERE username = ? AND is_active = 1 AND tenant_id = ?",
+        (username, tenant["id"]),
+    ).fetchone()
+    if user and check_password_hash(user["password_hash"], password):
+        g.tenant = tenant
     tenant_id = _get_or_create_default_tenant_id()
     conn = get_connection()
     existing = conn.execute("SELECT id FROM users WHERE tenant_id = ? AND username = ?", (tenant_id, username)).fetchone()
@@ -67,6 +102,18 @@ def authenticate(username: str, password: str):
     if user and check_password_hash(user["password_hash"], password):
         return user
     return None
+
+
+def tenant_required(func: Callable):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        tenant = _get_tenant_by_code(resolve_tenant_code())
+        if not tenant:
+            return {"error": "Unknown tenant"}, 404
+        g.tenant = tenant
+        return func(*args, **kwargs)
+
+    return wrapper
 
 
 def login_required(func: Callable):
@@ -131,6 +178,10 @@ def api_auth_required(func: Callable):
         conn = get_connection()
         token_row = conn.execute(
             """
+            SELECT at.*, u.username, u.role, u.is_active, t.code AS tenant_code
+            FROM api_tokens at
+            JOIN users u ON u.id = at.user_id
+            JOIN tenants t ON t.id = at.tenant_id
             SELECT at.*, u.username, u.role, u.is_active, u.tenant_id, t.slug AS tenant_slug, t.is_active AS tenant_active
             FROM api_tokens at
             JOIN users u ON u.id = at.user_id
@@ -154,6 +205,7 @@ def api_auth_required(func: Callable):
             return {"error": "User inactive"}, 403
         g.api_user = token_row
         g.api_token = token
+        set_request_tenant({"id": token_row["tenant_id"], "code": token_row["tenant_code"]})
         return func(*args, **kwargs)
 
     return wrapper

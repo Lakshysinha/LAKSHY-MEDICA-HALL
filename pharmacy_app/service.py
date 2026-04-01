@@ -19,6 +19,10 @@ def add_medicine(payload: dict, tenant_id: int | None = None) -> int:
     if payload["exp_date"] <= payload["mfg_date"]:
         raise ValidationError("EXP date must be greater than MFG date")
     tenant_id = tenant_id or get_tenant_id()
+def add_medicine(payload: dict, tenant_id: int = 1) -> int:
+def add_medicine(payload: dict) -> int:
+    if payload["exp_date"] <= payload["mfg_date"]:
+        raise ValidationError("EXP date must be greater than MFG date")
     conn = get_connection()
     try:
         cur = conn.execute(
@@ -30,6 +34,11 @@ def add_medicine(payload: dict, tenant_id: int | None = None) -> int:
             """,
             (
                 tenant_id,
+                name, generic_composition, brand, manufacturer, batch_no, mfg_date,
+                exp_date, quantity, rate, label_notes, code_value
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
                 payload["name"],
                 payload.get("generic_composition", ""),
                 payload.get("brand", ""),
@@ -51,6 +60,7 @@ def add_medicine(payload: dict, tenant_id: int | None = None) -> int:
 
 def search_medicines(query: str, tenant_id: int | None = None):
     tenant_id = tenant_id or get_tenant_id()
+def search_medicines(query: str, tenant_id: int = 1):
     conn = get_connection()
     try:
         return conn.execute(
@@ -61,6 +71,18 @@ def search_medicines(query: str, tenant_id: int | None = None):
             ORDER BY name
             """,
             (tenant_id, f"%{query}%", f"%{query}%", query),
+            SELECT *
+            FROM medicines
+            WHERE tenant_id = ? AND (name LIKE ? OR batch_no LIKE ? OR code_value = ?)
+            ORDER BY name
+            """,
+            (tenant_id, f"%{query}%", f"%{query}%", query),
+def search_medicines(query: str):
+    conn = get_connection()
+    try:
+        return conn.execute(
+            "SELECT * FROM medicines WHERE name LIKE ? OR batch_no LIKE ? OR code_value = ? ORDER BY name",
+            (f"%{query}%", f"%{query}%", query),
         ).fetchall()
     finally:
         _finalize_connection(conn)
@@ -68,16 +90,23 @@ def search_medicines(query: str, tenant_id: int | None = None):
 
 def get_short_list(tenant_id: int | None = None):
     tenant_id = tenant_id or get_tenant_id()
+def get_short_list(tenant_id: int = 1):
     conn = get_connection()
     try:
         return conn.execute(
             "SELECT * FROM short_list WHERE tenant_id = ? ORDER BY quantity ASC, name ASC", (tenant_id,)
         ).fetchall()
+def get_short_list():
+    conn = get_connection()
+    try:
+        return conn.execute("SELECT * FROM short_list ORDER BY quantity ASC, name ASC").fetchall()
     finally:
         _finalize_connection(conn)
 
 
 def create_sale(*, medicine_id: int, strips_sold: int, tablets_sold: int, payment_mode: str, customer_name: str = "", user_id: int | None = None, tenant_id: int | None = None):
+def create_sale(*, medicine_id: int, strips_sold: int, tablets_sold: int, payment_mode: str, customer_name: str = "", user_id: int | None = None, tenant_id: int = 1):
+def create_sale(*, medicine_id: int, strips_sold: int, tablets_sold: int, payment_mode: str, customer_name: str = "", user_id: int | None = None):
     total_units = strips_sold + tablets_sold
     if total_units <= 0:
         raise ValidationError("Sold quantity must be greater than zero")
@@ -90,6 +119,10 @@ def create_sale(*, medicine_id: int, strips_sold: int, tablets_sold: int, paymen
         med = conn.execute(
             "SELECT * FROM medicines WHERE id = ? AND tenant_id = ?", (medicine_id, tenant_id)
         ).fetchone()
+    conn = get_connection()
+    try:
+        med = conn.execute("SELECT * FROM medicines WHERE id = ? AND tenant_id = ?", (medicine_id, tenant_id)).fetchone()
+        med = conn.execute("SELECT * FROM medicines WHERE id = ?", (medicine_id,)).fetchone()
         if not med:
             raise ValidationError("Medicine not found")
         if total_units > med["quantity"]:
@@ -100,6 +133,8 @@ def create_sale(*, medicine_id: int, strips_sold: int, tablets_sold: int, paymen
         cur = conn.execute(
             "INSERT INTO sales (tenant_id, sale_date, customer_name, payment_mode, total_amount, created_by) VALUES (?, ?, ?, ?, ?, ?)",
             (tenant_id, sale_date, customer_name, payment_mode, line_total, user_id),
+            "INSERT INTO sales (sale_date, customer_name, payment_mode, total_amount, created_by) VALUES (?, ?, ?, ?, ?)",
+            (sale_date, customer_name, payment_mode, line_total, user_id),
         )
         sale_id = cur.lastrowid
         conn.execute(
@@ -113,6 +148,7 @@ def create_sale(*, medicine_id: int, strips_sold: int, tablets_sold: int, paymen
             "UPDATE medicines SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND tenant_id = ?",
             (total_units, medicine_id, tenant_id),
         )
+        conn.execute("UPDATE medicines SET quantity = quantity - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (total_units, medicine_id))
         conn.commit()
         return sale_id
     finally:
@@ -123,6 +159,10 @@ def daily_summary(day: str | None = None, tenant_id: int | None = None):
     if not day:
         day = date.today().isoformat()
     tenant_id = tenant_id or get_tenant_id()
+def daily_summary(day: str | None = None, tenant_id: int = 1):
+def daily_summary(day: str | None = None):
+    if not day:
+        day = date.today().isoformat()
     conn = get_connection()
     try:
         totals = conn.execute(
@@ -137,6 +177,9 @@ def daily_summary(day: str | None = None, tenant_id: int | None = None):
             WHERE s.sale_date = ? AND s.tenant_id = ?
             """,
             (day, tenant_id),
+            WHERE s.sale_date = ?
+            """,
+            (day,),
         ).fetchone()
         sales = conn.execute(
             """
@@ -148,6 +191,10 @@ def daily_summary(day: str | None = None, tenant_id: int | None = None):
             ORDER BY s.id DESC
             """,
             (day, tenant_id),
+            WHERE s.sale_date = ?
+            ORDER BY s.id DESC
+            """,
+            (day,),
         ).fetchall()
         return totals, sales
     finally:

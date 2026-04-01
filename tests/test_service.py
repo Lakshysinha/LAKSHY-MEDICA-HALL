@@ -63,6 +63,50 @@ class ServiceTests(unittest.TestCase):
             with self.assertRaises(ValidationError):
                 create_sale(medicine_id=med_id, strips_sold=2, tablets_sold=0, payment_mode="cash")
 
+    def test_tenant_summary_isolation(self):
+        with self.app.app_context():
+            conn = get_connection()
+            second_tenant_id = conn.execute(
+                "INSERT INTO tenants (slug, name) VALUES (?, ?)", ("b2", "Branch 2")
+            ).lastrowid
+            conn.commit()
+
+            med_1 = add_medicine(
+                {
+                    "name": "Tenant1Med",
+                    "batch_no": "T1",
+                    "mfg_date": "2026-01-01",
+                    "exp_date": "2027-01-01",
+                    "quantity": 10,
+                    "rate": 10,
+                },
+                tenant_id=1,
+            )
+            med_2 = add_medicine(
+                {
+                    "name": "Tenant2Med",
+                    "batch_no": "T2",
+                    "mfg_date": "2026-01-01",
+                    "exp_date": "2027-01-01",
+                    "quantity": 10,
+                    "rate": 10,
+                },
+                tenant_id=second_tenant_id,
+            )
+            create_sale(medicine_id=med_1, strips_sold=1, tablets_sold=0, payment_mode="cash", tenant_id=1)
+            create_sale(
+                medicine_id=med_2,
+                strips_sold=2,
+                tablets_sold=0,
+                payment_mode="online",
+                tenant_id=second_tenant_id,
+            )
+
+            totals_1, _ = daily_summary(tenant_id=1)
+            totals_2, _ = daily_summary(tenant_id=second_tenant_id)
+            self.assertEqual(totals_1["medicines_sold"], 1)
+            self.assertEqual(totals_2["medicines_sold"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

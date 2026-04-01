@@ -41,6 +41,35 @@ def init_db() -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             code TEXT UNIQUE NOT NULL,
+def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    row = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()
+    return row is not None
+
+
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    if not _table_exists(conn, table):
+        return False
+    cols = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(c["name"] == column for c in cols)
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column_def: str, column_name: str) -> None:
+    if not _column_exists(conn, table, column_name):
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column_def}")
+
+
+def _migration_001_baseline(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            id TEXT PRIMARY KEY,
+            applied_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS tenants (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            slug TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
             is_active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
@@ -55,6 +84,18 @@ def init_db() -> None:
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(tenant_id) REFERENCES tenants(id),
             UNIQUE(tenant_id, username)
+def init_db() -> None:
+    conn = sqlite3.connect(resolve_db_path())
+    conn.execute("PRAGMA foreign_keys = ON;")
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL CHECK(role IN ('owner', 'pharmacist', 'staff')),
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE TABLE IF NOT EXISTS medicines (
@@ -76,6 +117,10 @@ def init_db() -> None:
             FOREIGN KEY(tenant_id) REFERENCES tenants(id),
             UNIQUE(tenant_id, name, batch_no),
             UNIQUE(tenant_id, code_value)
+            code_value TEXT UNIQUE,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(name, batch_no)
         );
 
         CREATE TABLE IF NOT EXISTS sales (
@@ -159,5 +204,68 @@ def init_db() -> None:
         WHERE quantity <= 3
         """
     )
+        CREATE INDEX IF NOT EXISTS idx_sales_tenant_date ON sales(tenant_id, sale_date);
+        CREATE INDEX IF NOT EXISTS idx_medicines_tenant_name ON medicines(tenant_id, name);
+        CREATE INDEX IF NOT EXISTS idx_medicines_tenant_batch_no ON medicines(tenant_id, batch_no);
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_sales_sale_date ON sales(sale_date);
+        CREATE INDEX IF NOT EXISTS idx_medicines_name ON medicines(name);
+        CREATE INDEX IF NOT EXISTS idx_medicines_batch_no ON medicines(batch_no);
+
+        CREATE VIEW IF NOT EXISTS short_list AS
+        SELECT *
+        FROM medicines
+        WHERE quantity <= 3;
+        """
+    )
+
+
+def _migration_002_tenant_backfill(conn: sqlite3.Connection) -> None:
+    _ensure_column(conn, "users", "tenant_id INTEGER NOT NULL DEFAULT 1", "tenant_id")
+    _ensure_column(conn, "medicines", "tenant_id INTEGER NOT NULL DEFAULT 1", "tenant_id")
+    _ensure_column(conn, "sales", "tenant_id INTEGER NOT NULL DEFAULT 1", "tenant_id")
+    _ensure_column(conn, "api_tokens", "tenant_id INTEGER NOT NULL DEFAULT 1", "tenant_id")
+    _ensure_column(conn, "audit_logs", "tenant_id INTEGER NOT NULL DEFAULT 1", "tenant_id")
+
+    conn.execute("UPDATE users SET tenant_id = 1 WHERE tenant_id IS NULL")
+    conn.execute("UPDATE medicines SET tenant_id = 1 WHERE tenant_id IS NULL")
+    conn.execute("UPDATE sales SET tenant_id = 1 WHERE tenant_id IS NULL")
+    conn.execute("UPDATE api_tokens SET tenant_id = 1 WHERE tenant_id IS NULL")
+    conn.execute("UPDATE audit_logs SET tenant_id = 1 WHERE tenant_id IS NULL")
+
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_sales_tenant_date ON sales(tenant_id, sale_date)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_medicines_tenant_name ON medicines(tenant_id, name)")
+
+
+MIGRATIONS = [
+    ("001_baseline", _migration_001_baseline),
+    ("002_tenant_backfill", _migration_002_tenant_backfill),
+]
+
+
+def run_migrations(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            id TEXT PRIMARY KEY,
+            applied_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    applied = {r["id"] for r in conn.execute("SELECT id FROM schema_migrations").fetchall()}
+    for migration_id, migration_fn in MIGRATIONS:
+        if migration_id in applied:
+            continue
+        migration_fn(conn)
+        conn.execute("INSERT INTO schema_migrations (id) VALUES (?)", (migration_id,))
+
+
+def init_db() -> None:
+    conn = sqlite3.connect(resolve_db_path())
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON;")
+    run_migrations(conn)
     conn.commit()
     conn.close()

@@ -6,6 +6,7 @@ from .config import Config
 from .db import close_db, init_db
 from .migrations import run_migrations
 from .observability import register_observability
+from .observability import init_observability
 from .routes import register_routes
 
 
@@ -24,6 +25,12 @@ def create_app(test_config: dict | None = None):
     app.register_blueprint(api_bp)
     app.teardown_appcontext(close_db)
     register_observability(app)
+        ensure_default_owner()
+
+    init_observability(app)
+    register_routes(app)
+    app.register_blueprint(api_bp)
+    app.teardown_appcontext(close_db)
 
     @app.get("/health")
     def health_check():

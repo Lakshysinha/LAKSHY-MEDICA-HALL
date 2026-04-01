@@ -15,6 +15,9 @@ class Config:
     DEFAULT_TENANT_CODE = os.getenv("DEFAULT_TENANT_CODE", "default")
     DEFAULT_TENANT_NAME = os.getenv("DEFAULT_TENANT_NAME", "Default Tenant")
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+    DEFAULT_TENANT_SLUG = os.getenv("DEFAULT_TENANT_SLUG", "default")
+    DEFAULT_TENANT_NAME = os.getenv("DEFAULT_TENANT_NAME", "Lakshy Medical Hall")
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 
 class TestConfig(Config):
